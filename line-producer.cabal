@@ -1,0 +1,17 @@
+cabal-version:      >=1.10
+name:               line-producer
+version:            0.1.0.0
+license-file:       LICENSE
+maintainer:         tgagnaux@gmail.com
+author:             Thibault Gagnaux
+build-type:         Simple
+extra-source-files:
+    CHANGELOG.md
+    README.md
+
+executable line-producer
+    main-is:          Main.hs
+    default-language: Haskell2010
+    build-depends:
+        base >=4.7.0.1 && <4.14,
+        mtl
