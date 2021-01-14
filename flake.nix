@@ -21,10 +21,17 @@
   in
   {
     packages = {
-      line-producer-exes = project.line-producer.components.exes.line-producer;
+      line-producer-lib = project.line-producer.components.library;
     };
 
-    defaultPackage = self.packages.${system}.line-producer-exes;
+    apps.line-producer = {
+      type = "app";
+      program = "${project.line-producer.components.exes.line-producer}/bin/line-producer";
+    };
+
+    defaultApp = self.apps.${system}.line-producer;
+
+    defaultPackage = self.packages.${system}.line-producer-lib;
 
     devShell = project.shellFor {
       packages   = ps: with ps; [ line-producer ];
