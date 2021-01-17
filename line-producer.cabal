@@ -10,9 +10,10 @@ extra-source-files:
     README.md
 
 library
-    exposed-modules:  
+    exposed-modules:
       Coroutine
       Generator
+      Iteratee
     hs-source-dirs:   src
     default-language: Haskell2010
     build-depends:
