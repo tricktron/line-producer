@@ -1,0 +1,25 @@
+module Coroutine where
+
+import Control.monad.trans.MonadTrans
+
+data Coroutine suspendFun m res = Coroutine
+  { resume :: m (Either (suspendFun (Coroutine suspendFun m res)) res)
+  }
+
+instance (Functor suspendFun, Functor f) => Functor (Coroutine suspendFun f) where
+  fmap = fmap
+
+instance (Functor suspendFun, Monad m) => Applicative (Coroutine suspendFun m) where
+  pure = pure
+  (<*>) = (<*>)
+
+instance (Functor suspendFun, Monad m) => Monad (Coroutine suspendFun m) where
+  pure x = Coroutine $ pure $ Right x
+  co >>= f =
+    Coroutine( Coroutine.resume co >>= either (pure . Left . fmap (>>= f)) (Coroutine.resume . f))
+
+instance (Functor suspendFun) => MonadTrans (Coroutine suspendFun) where
+  lift = Coroutine . liftM Right
+
+suspend :: (Functor suspendFun, Monad m) => suspendFun (Coroutine suspendFun m res) -> Coroutine suspendFun m res
+suspend suspendFun = Coroutine $ pure $ Left suspendFun

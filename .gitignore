@@ -1,3 +1,6 @@
 result
 dist-newstyle
 .envrc
+.idea
+.gradle
+frege/build

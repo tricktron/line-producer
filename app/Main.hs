@@ -1,13 +1,11 @@
 module Main where
 
 import Control.Monad.Reader
-  ( MonadIO,
-    MonadReader (ask),
-    MonadTrans (lift),
-    ReaderT,
-    liftIO,
-    runReaderT,
-  )
+    ( MonadIO(..),
+      MonadReader(ask),
+      MonadTrans(lift),
+      ReaderT(runReaderT) )
+
 import System.IO (hGetLine, hIsEOF, hClose, IOMode( ReadMode ), openFile)
 
 type Generator e m = ReaderT (e -> m ()) m
@@ -17,7 +15,9 @@ type Producer m e = Generator e m ()
 type Consumer m e = e -> m ()
 
 yield :: Monad m => e -> Producer m e
-yield e = ask >>= \f -> lift $ f e
+yield e = do
+  env <- ask
+  lift $ env e
 
 runGenerator :: Monad m => Producer m e -> Consumer m e -> m ()
 runGenerator m f = runReaderT m f

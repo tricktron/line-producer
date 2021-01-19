@@ -1,0 +1,16 @@
+module Main where
+
+import Control.monad.trans.MonadTrans
+import Control.monad.Reader
+
+
+type Generator m e = ReaderT m e ()
+
+type Producer m e = Generator m e
+
+type Consumer m e = e -> m ()
+
+yield :: Monad m => e -> Producer m e
+yield e = do
+  en <- ask
+  lift $ en
