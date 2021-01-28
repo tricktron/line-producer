@@ -4,3 +4,4 @@ dist-newstyle
 .idea
 .gradle
 frege/build
+frege/TestFile.txt

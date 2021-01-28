@@ -1,0 +1,220 @@
+module ch.fhnw.thga.CoroutineLine where
+
+import ch.fhnw.thga.Generator (yield,  Generator, runGenerator )
+import ch.fhnw.thga.Iteratee (await,  Iteratee )
+import Control.monad.trans.MonadTrans (MonadTrans (lift))
+import ch.fhnw.thga.Pipe (pipe2)
+
+type Producer a m b = Generator a m b
+type Consumer a m b = Iteratee  a m b
+
+data FileInputStream = native java.io.FileInputStream where
+    native new :: String  -> STMutable s FileInputStream        -- todo: needs to be changed in frege
+                    throws FileNotFoundException
+
+openReaderEnc :: String -> String -> STMutable s BufferedReader              -- todo: needs to be changed in frege
+openReaderEnc encoding fileName = do
+    fis <- FileInputStream.new (fileName :: String )
+    isr <- InputStreamReader.new fis encoding
+    BufferedReader.new isr
+
+openReader = openReaderEnc "UTF-8"
+
+data StringReader = native java.io.StringReader where
+    native new      :: String -> STMutable s StringReader
+
+data MalformedURLException = pure native java.net.MalformedURLException  -- not needed after integration
+derive Exceptional MalformedURLException
+
+data LpURL = native java.net.URL where
+    native new              :: String -> STMutable s LpURL                throws MalformedURLException
+    native openStream       :: Mutable s LpURL -> STMutable s InputStream throws IOException
+
+data StrGenData = StrGen {
+    line        :: String,              -- the currently generated line, "onLine" will be called with this
+    nextLine    :: String -> String     -- the generation function for the next line
+}
+
+type StringGenerator = Ref StrGenData   -- a mutable reference to the generator data
+
+data Person = Person {
+    name :: String,
+    age  :: Int
+}
+
+producePeople :: Producer Person IO ()
+producePeople =
+  do
+    yield $ Person "Elon Musk" 49
+    yield $ Person "Jeff Bezos" 57
+    yield $ Person "Bill Gates" 65
+    pure ()
+
+produceLinesFromBufferedReader :: Mutable s BufferedReader -> Producer String (ST s) ()
+produceLinesFromBufferedReader bufferedReader =
+  do
+    line <- lift $ bufferedReader.readLine
+    case line of
+      (Just x) ->
+        do
+          yield x
+          produceLinesFromBufferedReader bufferedReader
+      (Nothing) ->
+        do
+          lift $ bufferedReader.close
+          pure ()
+
+produceLinesFromFilePath :: String -> Producer String IO ()
+produceLinesFromFilePath filePath =
+  do
+   bufferedReader <- lift $ openReader filePath
+   produceLinesFromBufferedReader bufferedReader
+
+produceLinesFromFile :: File -> Producer String IO ()
+produceLinesFromFile file = produceLinesFromFilePath file.getPath
+
+produceLinesFromStringReader :: Producer String (ST s) ()
+produceLinesFromStringReader =
+ do
+   stringReader <- lift $ StringReader.new $ unlines ["first","second","third"]
+   bufferedReader <- lift $ BufferedReader.new stringReader
+   produceLinesFromBufferedReader bufferedReader
+
+
+produceLinesFromUrl :: String -> Producer String IO ()
+produceLinesFromUrl url =
+ do
+   xurl <- lift $ LpURL.new url
+   uis <- lift $ LpURL.openStream xurl
+   isr <- lift $ InputStreamReader.new uis "UTF-8"
+   bufferedReader <- lift $ BufferedReader.new isr
+   produceLinesFromBufferedReader bufferedReader
+
+produceLinesFromStrGenData :: Int -> Mutable s StringGenerator -> Producer String (ST s) ()
+produceLinesFromStrGenData n _      | n == 0 = pure ()
+produceLinesFromStrGenData n strGen | otherwise =
+  do
+    state <- lift $ strGen.get
+    yield state.line
+    lift $ strGen.modify _.{line <- state.nextLine}
+    produceLinesFromStrGenData (n - 1) strGen
+
+countLinesConsumer :: Show a => Int -> Consumer (Maybe a) (ST s) Int
+countLinesConsumer count =
+  do
+    line <- await
+    case line of
+      (Just l) ->
+        do
+          countLinesConsumer (count + 1)
+      (Nothing) -> pure count
+
+countAndPrintLinesConsumer :: Show a => Int -> Consumer (Maybe a) IO Int
+countAndPrintLinesConsumer count =
+  do
+    line <- await
+    case line of
+      (Just l) ->
+        do
+          lift $ println $ show (count + 1) ++ ": " ++ (show l)
+          countAndPrintLinesConsumer (count + 1)
+      (Nothing) -> pure count
+
+oneLineConsumer :: Show a => Consumer (Maybe a) IO (Maybe a)
+oneLineConsumer =
+  do
+    line <- await
+    pure line
+
+nLineCountAndPrintConsumer :: Show a => Int -> Int -> Consumer (Maybe a) IO Int
+nLineCountAndPrintConsumer n count | n == count = pure count
+nLineCountAndPrintConsumer n count | otherwise =
+  do
+    line <- await
+    case line of
+      (Just l) ->
+        do
+          lift $ println $ show (count + 1) ++ ": " ++ (show l)
+          nLineCountAndPrintConsumer n (count + 1)
+      (Nothing) -> pure count
+
+personConsumer :: Consumer (Maybe Person) IO ()
+personConsumer =
+  do
+    maybePerson <- await
+    case maybePerson of
+      (Just p) ->
+        do
+          lift $ println $ "Processing " ++ p.name
+      (Nothing) -> pure ()
+
+main :: IO ()
+main =
+  do
+    testFile = File.new "TestFile.txt"
+    println "----------------------------------------"
+    println "general file handling"
+    -- delete test file if it already existed
+    result <- testFile.delete
+    println $ "Test file deleted to clean up before start: " ++ show result
+    println "create test file"
+    writeFile testFile.getPath $ unlines ["first line","second line","third line"]
+    result <- testFile.exists
+    println $ "File now exists: " ++ show result
+    println "read test file in toto"
+    content <- readFile testFile.getPath
+    println "file content was:"
+    println content
+    println "append 2 lines"
+    appendFile testFile.getPath $ unlines ["fourth line","fifth line"]
+
+
+    println "----------------------------------------"
+    println "processing each line with a buffered reader, while keeping track of line numbers"
+    (xs, count) <- pipe2 (produceLinesFromFilePath testFile.getPath) (countAndPrintLinesConsumer 0)
+    println $ "total number of lines: " ++ show count
+
+
+    println "----------------------------------------"
+    println "processing each line from a file, pushing each line on a stack"
+    (stack, _) <- runGenerator (produceLinesFromFile testFile)
+    println $ "total stack" ++ show stack
+
+
+    println "----------------------------------------"
+    println "reading only one line (a header for example)"
+    (_, maybeHeader) <- pipe2 (produceLinesFromFilePath testFile.getPath) oneLineConsumer
+    case maybeHeader of
+     (Just header) -> println $ "the header line is: " ++ show header
+     (Nothing) -> println $ "The file is empty"
+
+    println "-----------Version 2 of processing just one line --------------------"
+    println "reading only one line (a header for example)"
+    (_, maybeHeader) <- pipe2 (produceLinesFromFilePath testFile.getPath) (await >>= pure)
+    case maybeHeader of
+      (Just header) -> println $ "the header line is: " ++ show header
+      (Nothing) -> println $ "The file is empty"
+
+    println "----------------------------------------"
+    println "processing each line with a non-IO impure reader, here: StringReader. (great for testing)"
+    numLines =
+      do
+        (_, res) <- pipe2 (produceLinesFromStringReader) (countLinesConsumer 0)
+        pure res
+    println $ "processing strings with StringReader works as expected: " ++ show (3 == numLines.run)
+
+
+    println "----------------------------------------"
+    println "reading from a URL"
+    (_, urlLinesCount) <- pipe2 (produceLinesFromUrl "http://google.com") (nLineCountAndPrintConsumer 4 0)
+    println $ "processing strings from URL works as expected: " ++ show (urlLinesCount == 4)
+
+
+    println "----------------------------------------"
+    strGenLineCount =
+      do
+        strGenRef <- Ref.new $ StrGen { line = "", nextLine = (++ "x") }
+        (_, res) <- pipe2 (produceLinesFromStrGenData 4 strGenRef) (countLinesConsumer 0)
+        pure res
+    println $ "processing strings from String generator works as expected: " ++ show (strGenLineCount.run == 4)
+    println "FIN"

@@ -1,0 +1,28 @@
+module ch.fhnw.thga.Iteratee where
+
+import Control.monad.trans.MonadTrans (MonadTrans (lift))
+import ch.fhnw.thga.Coroutine (Coroutine, resume, suspend)
+
+type Iteratee a m res = Coroutine ((->) a) m res
+
+await :: Monad m => Iteratee a m a
+await = suspend pure
+
+runIteratee :: Monad m => [a] -> Iteratee a m res -> m res
+runIteratee xs iter = do
+  eitherCo <- resume iter
+  case eitherCo of
+    (Left co) ->
+      case xs of
+          [] -> runIteratee [] $ co $ error "No more values to process"
+          (x:xs') -> runIteratee xs' $ co x
+    (Right x) -> pure x
+
+main :: IO ()
+main = do
+  let iteratee = do
+        lift $ putStr "Enter two numbers: "
+        a <- await
+        b <- await
+        lift $ putStrLn $ "Sum is " ++ show (a + b)
+  runIteratee [88, 42] iteratee

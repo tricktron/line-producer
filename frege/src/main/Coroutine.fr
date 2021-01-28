@@ -1,17 +1,10 @@
-module Coroutine where
+module ch.fhnw.thga.Coroutine where
 
 import Control.monad.trans.MonadTrans
 
 data Coroutine suspendFun m res = Coroutine
   { resume :: m (Either (suspendFun (Coroutine suspendFun m res)) res)
   }
-
-instance (Functor suspendFun, Functor f) => Functor (Coroutine suspendFun f) where
-  fmap = fmap
-
-instance (Functor suspendFun, Monad m) => Applicative (Coroutine suspendFun m) where
-  pure = pure
-  (<*>) = (<*>)
 
 instance (Functor suspendFun, Monad m) => Monad (Coroutine suspendFun m) where
   pure x = Coroutine $ pure $ Right x

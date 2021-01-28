@@ -59,13 +59,16 @@ printEachLine = do
         (Nothing) -> return ()
 
 
-simpleConsumer :: Iteratee Integer IO ()
-simpleConsumer = do
-        lift $ putStr "Enter two numbers: "
+simpleConsumer :: Integer -> Iteratee (Maybe Integer) IO Integer
+simpleConsumer sum = do
         a <- await
-        b <- await
-        lift $ putStrLn $ "Sum is " ++ show (a + b)
+        case a of
+            (Just x) -> do
+                lift $ putStrLn $ ("Received Integer: ") ++ (show x)
+                simpleConsumer (sum + x)
+            (Nothing) -> return $ sum
 
-main :: IO ((), ())
+
+main :: IO (Integer, Integer)
 main = do
-    pipe2 eachLine printEachLine
+    pipe2 simpleProducer (simpleConsumer 0)

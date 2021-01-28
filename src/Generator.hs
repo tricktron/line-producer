@@ -11,7 +11,7 @@ runGenerator = go id
     go f gen = do
       eitherGen <- resume gen
       case eitherGen of
-        (Left (x, gen)) -> go (f . (x:)) gen
+        (Left (x, gen')) -> go (f . (x:)) gen'
         (Right x)  -> return (f [], x)
 
 yield :: Monad m => a -> Generator a m ()

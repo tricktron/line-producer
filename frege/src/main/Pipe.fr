@@ -1,0 +1,49 @@
+module ch.fhnw.thga.Pipe where
+
+import ch.fhnw.thga.Generator (yield,  Generator )
+import ch.fhnw.thga.Iteratee (await,  Iteratee )
+import ch.fhnw.thga.Coroutine ( Coroutine(resume) )
+import Control.monad.trans.MonadTrans (MonadTrans (lift))
+
+bindM2 :: Monad m => (a -> b -> m c) -> m a -> m b -> m c
+bindM2 f ma mb = do
+    a <- ma
+    b <- mb
+    f a b
+
+pipe :: Monad m => Generator a m x -> Iteratee a m y -> m (x, y)
+pipe gen iter = bindM2 go (resume gen) (resume iter) where
+    go (Left (x, gen')) (Left funIter) = pipe gen' (funIter x)
+    go (Right x) (Right y)             = pure (x, y)
+    go (Left (x, gen')) (Right y)      = pipe gen' $ return y
+    go (Right x) (Left funIter)        = error "The producer ended too soon"
+
+pipe2 :: Monad m => Generator a m x -> Iteratee (Maybe a) m y -> m (x, y)
+pipe2 gen iter = bindM2 go (resume gen) (resume iter) where
+    go (Left (x, gen')) (Left funIter) = pipe2 gen' (funIter $ Just x)
+    go (Right x) (Right y)             = pure (x, y)
+    go (Left (x, gen')) (Right y)      = pipe2 gen' $ return y
+    go (Right x) (Left funIter)        = pipe2 (return x) (funIter Nothing)
+
+generateInts :: Int -> Int -> Generator Int IO ()
+generateInts start end | start == end = do pure ()
+                       | otherwise    = do
+                                          yield start
+                                          generateInts (start + 1) end
+
+printEachLine :: Show a => Iteratee (Maybe a) IO ()
+printEachLine = do
+  line <- await
+  case line of
+    (Just x) -> do
+      lift $ println $ show x
+      printEachLine
+    (Nothing) -> pure ()
+
+
+main :: IO ()
+main =
+  do
+    _ <- pipe2 (generateInts 0 10) printEachLine
+    pure ()
+
