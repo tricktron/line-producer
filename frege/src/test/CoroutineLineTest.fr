@@ -1,0 +1,92 @@
+module ch.fhnw.thga.CoroutineLineTest where
+
+import ch.fhnw.thga.Generator (yield,  Generator, runGenerator )
+import ch.fhnw.thga.Iteratee (await,  Iteratee )
+import Control.monad.trans.MonadTrans (MonadTrans (lift))
+import ch.fhnw.thga.Pipe (pipe2)
+import Test.QuickCheck
+
+type Producer a m b = Generator a m b
+type Consumer a m b = Iteratee  a m b
+
+produceAndCountLinesFromBufferedReader :: Int -> Mutable s BufferedReader -> Producer String (ST s) Int
+produceAndCountLinesFromBufferedReader count br =
+  do
+    line <- lift $ br.readLine
+    case line of
+      (Just x) ->
+        do
+          yield x
+          produceAndCountLinesFromBufferedReader (count + 1) br
+      (Nothing) ->
+        do
+          lift $ br.close
+          pure count
+
+produceLinesFromBufferedReader :: Mutable s BufferedReader -> Producer String (ST s) Int
+produceLinesFromBufferedReader = produceAndCountLinesFromBufferedReader 0
+
+produceLinesFromFilePath :: String -> Producer String IO Int
+produceLinesFromFilePath filePath =
+  do
+     br <- lift $ openReader filePath
+     produceLinesFromBufferedReader br
+
+produceLinesFromFile :: File -> Producer String IO Int
+produceLinesFromFile file = produceLinesFromFilePath file.getPath
+
+createMockFile :: String -> [String] -> IO File
+createMockFile name contents =
+ do
+   file = File.new name
+   exists <- File.exists file
+   if exists
+   then do
+     File.delete file
+     writeFile file.getPath $ unlines contents
+   else do writeFile file.getPath $ unlines contents
+   pure file
+
+writeAndReadAMockFileInIOMonadWorksAsExpected :: Property
+writeAndReadAMockFileInIOMonadWorksAsExpected =
+  once $ morallyDubiousIOProperty $ do
+    expected = ["first", "second"]
+    file <- createMockFile "mockFile.txt" expected
+    actual <- readFile file.getPath
+    file.delete
+    pure $ lines actual == expected
+
+producerCorrectlyReadsAndCountsLines :: [String] -> IO Bool
+producerCorrectlyReadsAndCountsLines expected =
+  do
+    file <- createMockFile "mockFile.txt" expected
+    (actual, linesCount) <- runGenerator $ produceLinesFromFile file
+    file.delete
+    pure $ expected == actual && linesCount == length expected
+
+aSimpleProducerTest :: Property
+aSimpleProducerTest =
+  once $ morallyDubiousIOProperty $ producerCorrectlyReadsAndCountsLines ["first", "second"]
+
+noContentProducerTest :: Property
+noContentProducerTest =
+  once $ morallyDubiousIOProperty $ producerCorrectlyReadsAndCountsLines []
+
+producerIsInvariantInLineCountAndLineContent :: [String] -> Property
+producerIsInvariantInLineCountAndLineContent xs =
+  morallyDubiousIOProperty $ do
+    file <- createMockFile "mockFile.txt" xs
+    (lines, linesCount) <- runGenerator $ produceLinesFromFile file
+    File.delete file
+    pure $ xs == lines && linesCount == length xs
+
+-- Quickcheck in this case is similar to fuzzing and leads to surprisingly useful results
+pFailingSpectacularyBecauseTheCreateMockFileFunctionExpectsOnlyNonNewLineStrings =
+  expectFailure $ property producerIsInvariantInLineCountAndLineContent
+
+-- amazing combination of quickCheck with native regex support
+genNonNewLineStrings :: Gen [String]
+genNonNewLineStrings = listOf $ arbitrary `suchThat` (!~ ´[\r\n]´)
+
+p_producerIsInvariantInLineCountAndLineContent =
+  forAll genNonNewLineStrings producerIsInvariantInLineCountAndLineContent
