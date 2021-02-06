@@ -1,7 +1,7 @@
 module ch.fhnw.thga.CoroutineLine where
 
 import ch.fhnw.thga.Generator (yield,  Generator, runGenerator )
-import ch.fhnw.thga.Iteratee (await,  Iteratee )
+import ch.fhnw.thga.Iteratee (await,  Iteratee, runIteratee )
 import Control.monad.trans.MonadTrans (MonadTrans (lift))
 import ch.fhnw.thga.Pipe (pipe2)
 
@@ -42,8 +42,8 @@ data Person = Person {
     age  :: Int
 }
 
-producePeople :: Producer Person IO ()
-producePeople =
+producePerson :: Producer Person IO ()
+producePerson =
   do
     yield $ Person "Elon Musk" 49
     yield $ Person "Jeff Bezos" 57
@@ -146,6 +146,7 @@ personConsumer =
       (Just p) ->
         do
           lift $ println $ "Processing " ++ p.name
+          personConsumer
       (Nothing) -> pure ()
 
 main :: IO ()
@@ -217,4 +218,25 @@ main =
         (_, res) <- pipe2 (produceLinesFromStrGenData 4 strGenRef) (countLinesConsumer 0)
         pure res
     println $ "processing strings from String generator works as expected: " ++ show (strGenLineCount.run == 4)
+
+    println "----------------------------------------"
+    gen =
+      do
+        yield 1
+        yield 2
+        pure 42
+    iter =
+      do
+        lift $ print "Enter two numbers: "
+        a <- await
+        b <- await
+        lift $ println $ "Sum is " ++ show (a + b)
+    (xs, res) <- runGenerator gen
+    println $ show xs ++ " " ++  show res
+    println $ "processing producers and consumers indepedently without the pipe2 function"
+    runIteratee xs iter
+
+    println "----------------------------------------"
+    (_, _) <- pipe2 (producePerson) (personConsumer)
+    println "processing custom data type Person works"
     println "FIN"
