@@ -239,4 +239,9 @@ main =
     println "----------------------------------------"
     (_, _) <- pipe2 (producePerson) (personConsumer)
     println "processing custom data type Person works"
+
+    println "command line input (end with command + d to signal end of stream)"
+    (end, count) <- pipe2 (produceLinesFromBufferedReader stdin) (countAndPrintLinesConsumer 0)
+    println $ "finished processing " ++ show count ++ " lines"
+
     println "FIN"
